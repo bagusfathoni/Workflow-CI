@@ -34,7 +34,7 @@ jobs:
       - name: Train Model using MLflow
         run: |
           cd MLProject
-          mlflow run . --no-conda --experiment-name CI_Diabetes
+          mlflow run . --env-manager=local --experiment-name CI_Diabetes
 
       # 5. Archive MLruns (SYARAT SKILLED)
       # Menyimpan folder mlruns sebagai artifact di GitHub Actions
