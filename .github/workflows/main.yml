@@ -1,15 +1,15 @@
-name: Diabetes CI/CD Pipeline
+name: Diabetes CI (Skilled)
 
 on:
   push:
     branches: ["main"]
 
 jobs:
-  train-and-build:
+  train-model:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout Code
+      # 1. Ambil Kode dari Repo
       - name: Checkout Repository
         uses: actions/checkout@v3
 
@@ -19,61 +19,22 @@ jobs:
         with:
           python-version: "3.9"
 
-      # 3. Install Dependencies
+      # 3. Install Library
       - name: Install Libraries
         run: |
           pip install mlflow pandas scikit-learn matplotlib seaborn joblib
 
-      # 4. Train Model
+      # 4. Jalankan Training (MLflow Run)
+      # --env-manager=local agar cepat (pakai pip di atas), tidak perlu install conda lagi
       - name: Train Model
         run: |
           cd MLProject
           mlflow run . --env-manager=local --experiment-name CI_Diabetes_Run
 
-      # 5. Archive Artifacts
+      # 5. Simpan Hasil Training (SYARAT SKILLED)
+      # Ini akan meng-upload folder 'mlruns' ke GitHub Actions Artifacts
       - name: Upload MLflow Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: training-artifacts
+          name: experiment-results
           path: MLProject/mlruns
-
-      # 6. Login Docker Hub (Gunakan Action Resmi agar lebih aman)
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      # 7. Build & Push Docker Image
-      - name: Build and Push Docker Image
-        env:
-          DOCKER_USER: ${{ secrets.DOCKER_USERNAME }}
-        run: |
-          cd MLProject
-
-          # --- PERBAIKAN LOGIKA DETEKSI ID ---
-          # 1. Ambil Exp ID (angka saja)
-          EXP_ID=$(ls mlruns | grep -E '^[0-9]+$' | head -n 1)
-
-          # 2. Ambil Run ID (Hanya ambil folder dengan nama hash 32 karakter)
-          # grep -E '^[a-f0-9]{32}$' memastikan kita tidak mengambil 'meta.yaml'
-          RUN_ID=$(ls -t mlruns/$EXP_ID | grep -E '^[a-f0-9]{32}$' | head -n 1)
-
-          echo "✅ Detected Experiment ID: $EXP_ID"
-          echo "✅ Detected Run ID: $RUN_ID"
-
-          if [ -z "$RUN_ID" ]; then
-            echo "❌ Error: Run ID tidak ditemukan!"
-            exit 1
-          fi
-
-          # --- BUILD & PUSH ---
-          echo "🚀 Building Docker Image..."
-
-          mlflow models build-docker \
-            -m "runs:/$RUN_ID/model" \
-            -n "$DOCKER_USER/diabetes-prediction:v1" \
-            --enable-mlserver
-
-          echo "🚀 Pushing to Docker Hub..."
-          docker push "$DOCKER_USER/diabetes-prediction:v1"
