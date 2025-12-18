@@ -1,0 +1,69 @@
+name: MLflow CI Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-train:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout Code
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # 2. Setup Python
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+
+      # 3. Install Dependencies
+      - name: Install Dependencies
+        run: |
+          pip install mlflow pandas scikit-learn matplotlib seaborn joblib
+
+      # 4. Run MLflow Project (Training Model)
+      # Kita gunakan --no-conda agar lebih cepat (karena deps sudah diinstall di step 3)
+      - name: Train Model using MLflow
+        run: |
+          cd MLProject
+          mlflow run . --no-conda --experiment-name CI_Diabetes
+
+      # 5. Archive MLruns (SYARAT SKILLED)
+      # Menyimpan folder mlruns sebagai artifact di GitHub Actions
+      - name: Upload MLflow Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlruns-experiment-data
+          path: MLProject/mlruns
+
+      # 6. Build & Push Docker Image (SYARAT ADVANCE)
+      - name: Build and Push Docker Image
+        env:
+          DOCKER_USER: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PWD: ${{ secrets.DOCKER_PASSWORD }}
+        run: |
+          # Cari Run ID terakhir dari folder mlruns
+          cd MLProject
+          LAST_RUN_ID=$(ls -td mlruns/*/ | head -1 | cut -d'/' -f2)
+          echo "Detected Run ID: $LAST_RUN_ID"
+
+          # Login ke Docker Hub
+          echo $DOCKER_PWD | docker login -u $DOCKER_USER --password-stdin
+
+          # Build Docker Image menggunakan MLflow
+          # Format URI: runs:/<run_id>/model (sesuai nama folder model di script python)
+          mlflow models build-docker \
+            -m "runs:/$LAST_RUN_ID/best_model_diabetes" \
+            -n "$DOCKER_USER/diabetes-model:latest" \
+            --enable-mlserver
+
+          # Push ke Docker Hub
+          docker push "$DOCKER_USER/diabetes-model:latest"
